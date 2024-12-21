@@ -59,7 +59,7 @@ def fetch_feature_data(last_processed_edit_date):
         return []
 
 
-# Function to monitor updates (to be called periodically)
+# Function to monitor updates (to be triggered manually)
 def monitor_updates():
     # Step 1: Get the last processed edit date
     last_processed_edit_date = get_last_processed_edit_date_from_database()
@@ -76,10 +76,8 @@ def monitor_updates():
         print("No updates to save.")
 
 
-# Start the first monitoring task (Run this function from the client side)
+# Start monitoring updates when a button is clicked
 @anvil.server.callable
 def start_monitoring():
-    # This will run the monitoring loop
-    while True:
-        monitor_updates()
-        time.sleep(60)  # Wait for 60 seconds before checking again
+    monitor_updates()
+    return "Monitoring completed, updates have been processed!"
