@@ -1,4 +1,19 @@
 allow_embedding: false
+db_schema:
+  processed_updates:
+    client: full
+    columns:
+    - admin_ui: {width: 200}
+      name: globalid
+      type: string
+    - admin_ui: {width: 200}
+      name: last_processed_edit_date
+      type: datetime
+    - admin_ui: {width: 200}
+      name: edit_date
+      type: datetime
+    server: full
+    title: processed_updates
 dependencies: []
 name: M3 App 1
 package_name: M3_App_1
