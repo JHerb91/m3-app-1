@@ -10,6 +10,7 @@ EASTERN_TIME_OFFSET = datetime.timedelta(hours=-5)  # Eastern Time is UTC-5
 # Track last check time and if processing is already in progress
 last_check_time = datetime.datetime.utcnow() + EASTERN_TIME_OFFSET  # Adjust last check time to Eastern Time
 is_processing = False  # Flag to prevent multiple calls
+update_queue = []  # Store updates locally to prevent recursion
 
 def monitor_feature_layer():
     global last_check_time  # Preserve timestamp across runs
@@ -55,7 +56,7 @@ def monitor_feature_layer():
                         updates_found = True
                         print(f"Update detected at {readable_edit_date_et}!")
 
-                        # Prepare payload for webhook
+                        # Prepare payload for the update to be added later
                         payload = {
                             "edit_date": readable_edit_date_et.strftime('%Y-%m-%d %H:%M:%S'),
                             "globalid": attributes.get("globalid"),
@@ -63,37 +64,8 @@ def monitor_feature_layer():
                             "job_name": attributes.get("job_name")
                         }
 
-                        # Convert the payload to a string for JSON pass-through
-                        payload_string = json.dumps(payload)
-
-                        # Send payload to webhook as a string
-                        webhook_response = anvil.http.request(
-                            "https://hook.us2.make.com/m7lwew8alckuusm2dnn3d7tkvqnum2j3",  # Replace with your webhook URL
-                            method="POST",
-                            data=payload_string,  # Send data as a string, as per Make's pass-through configuration
-                            headers={"Content-Type": "application/json"}
-                        )
-
-                        # Debug the response from the webhook
-                        response_body = webhook_response.get_bytes().decode("utf-8")
-                        print(f"Webhook Response Body: {response_body}")
-
-                        # Check if the response is successful by checking the content
-                        if "error" in response_body.lower():
-                            print(f"Webhook error: {response_body}")
-                        else:
-                            print("Webhook response successfully received")
-
-                        # Now call the Anvil server-side function to add the record to the table
-                        try:
-                            result = anvil.server.call('add_record_to_processed_updates',
-                                                      attributes.get("globalid"),
-                                                      attributes.get("job_number"),
-                                                      attributes.get("job_name"),
-                                                      readable_edit_date_et)
-                            print(f"Record added: {result}")
-                        except Exception as e:
-                            print(f"Error adding record to processed_updates: {e}")
+                        # Add the update to the local queue (no server call yet)
+                        update_queue.append(payload)
 
         else:
             print("No features found in query response.")
@@ -101,11 +73,40 @@ def monitor_feature_layer():
         # Update last check time (set to Eastern Time)
         last_check_time = datetime.datetime.utcnow() + EASTERN_TIME_OFFSET  # Adjust to Eastern Time
 
+        # After monitoring is done, trigger server-side function (if updates are found)
+        if updates_found:
+            process_updates()
+
     except Exception as e:
         print(f"Error during monitoring: {e}")
 
     finally:
         is_processing = False  # Reset the flag to allow future processing
+
+def process_updates():
+    """
+    Processes updates after the monitoring cycle has finished.
+    This should be executed outside of the monitoring loop to prevent recursive calls.
+    """
+    if not update_queue:
+        print("No updates to process.")
+        return
+
+    for update in update_queue:
+        try:
+            # Call the Anvil server-side function to add the record to the table
+            result = anvil.server.call('add_record_to_processed_updates',
+                                      update["globalid"],
+                                      update["job_number"],
+                                      update["job_name"],
+                                      update["edit_date"])
+            print(f"Record added: {result}")
+        except Exception as e:
+            print(f"Error adding record to processed_updates: {e}")
+    
+    # Clear the update queue after processing
+    update_queue.clear()
+
 
 # Continuous monitoring loop (every 60 seconds)
 while True:
