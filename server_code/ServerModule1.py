@@ -2,34 +2,35 @@ import datetime
 import time
 import anvil.http
 import json
+import anvil.server
 
-# Hosted feature layer URL
-feature_layer_url = "https://services.arcgis.com/rD2ylXRs80UroD90/arcgis/rest/services/Project_Tracker_View_Layer/FeatureServer/0"
+# Define the UTC offset for Eastern Time
+EASTERN_TIME_OFFSET = datetime.timedelta(hours=-5)  # Eastern Time is UTC-5
 
-# Webhook URL
-make_webhook_url = "https://hook.us2.make.com/ij23k1z88l9ie4pmnv421ylnpljzaz8b"
-
-# Track last check time
-last_check_time = datetime.datetime.utcnow()
+# Track last check time and if processing is already in progress
+last_check_time = datetime.datetime.utcnow() + EASTERN_TIME_OFFSET  # Adjust last check time to Eastern Time
+is_processing = False  # Flag to prevent multiple calls
 
 def monitor_feature_layer():
     global last_check_time  # Preserve timestamp across runs
+    global is_processing     # Prevent repeated processing
+
+    if is_processing:
+        return  # Skip if processing is already in progress
 
     try:
-        print(f"Last check time (UTC): {last_check_time}")
+        is_processing = True  # Set flag to true when processing starts
+        print(f"Last check time (Eastern Time): {last_check_time}")
 
         # Query URL for fetching features
-        query_url = f"{feature_layer_url}/query?where=1=1&outFields=*&f=json"
-
+        query_url = f"https://services.arcgis.com/rD2ylXRs80UroD90/arcgis/rest/services/Project_Tracker_View_Layer/FeatureServer/0/query?where=1=1&outFields=*&f=json"
+        
         print(f"Sending request to {query_url}")
-        response = anvil.http.request(
-            query_url,
-            method="GET"
-        )
+        response = anvil.http.request(query_url, method="GET")
 
         # Decode response
         raw_data = json.loads(response.get_bytes().decode("utf-8"))
-        print(f"Query successful. Processing features...")
+        print("Query successful. Processing features...")
 
         # Check if features are present
         if "features" in raw_data and raw_data["features"]:
@@ -38,55 +39,73 @@ def monitor_feature_layer():
             for feature in raw_data["features"]:
                 attributes = feature["attributes"]
 
-                # Extract EditDate and compare with last check time
+                # Extract EditDate and convert it to Eastern Time
                 edit_date = attributes.get("EditDate", None)
                 if edit_date:
+                    # Convert edit_date (UTC timestamp) to datetime in UTC
                     readable_edit_date = datetime.datetime.utcfromtimestamp(edit_date / 1000)
+                    # Convert to Eastern Time
+                    readable_edit_date_et = readable_edit_date + EASTERN_TIME_OFFSET
 
                     # 1-minute buffer for time comparison
                     tolerance_time = last_check_time - datetime.timedelta(minutes=1)
 
                     # Process only updated records
-                    if readable_edit_date > tolerance_time:
+                    if readable_edit_date_et > tolerance_time:
                         updates_found = True
-                        print(f"Update detected at {readable_edit_date}!")
+                        print(f"Update detected at {readable_edit_date_et}!")
 
                         # Prepare payload for webhook
                         payload = {
-                            "edit_date": readable_edit_date.strftime('%Y-%m-%d %H:%M:%S'),
-                            "attributes": attributes
+                            "edit_date": readable_edit_date_et.strftime('%Y-%m-%d %H:%M:%S'),
+                            "globalid": attributes.get("globalid"),
+                            "job_number": attributes.get("job_number"),
+                            "job_name": attributes.get("job_name")
                         }
 
-                        # Log updated record details
-                        print(f"Sending updated record to webhook:\n{json.dumps(payload, indent=2)}")
+                        # Convert the payload to a string for JSON pass-through
+                        payload_string = json.dumps(payload)
 
-                        # Send payload to webhook
+                        # Send payload to webhook as a string
                         webhook_response = anvil.http.request(
-                            make_webhook_url,
+                            "https://hook.us2.make.com/m7lwew8alckuusm2dnn3d7tkvqnum2j3",  # Replace with your webhook URL
                             method="POST",
-                            json=payload
+                            data=payload_string,  # Send data as a string, as per Make's pass-through configuration
+                            headers={"Content-Type": "application/json"}
                         )
 
-                        # Debug webhook response
-                        print(f"Webhook Response Status: {webhook_response.status}")
-                        print(f"Webhook Response Body: {webhook_response.get_bytes().decode('utf-8')}")
+                        # Debug the response from the webhook
+                        response_body = webhook_response.get_bytes().decode("utf-8")
+                        print(f"Webhook Response Body: {response_body}")
 
-                        # Handle webhook errors
-                        if webhook_response.status != 200:
-                            print(f"Webhook error. Status code: {webhook_response.status}")
+                        # Check if the response is successful by checking the content
+                        if "error" in response_body.lower():
+                            print(f"Webhook error: {response_body}")
+                        else:
+                            print("Webhook response successfully received")
 
-            # Print only if no updates were detected
-            if not updates_found:
-                print("No updates found.")
+                        # Now call the Anvil server-side function to add the record to the table
+                        try:
+                            result = anvil.server.call('add_record_to_processed_updates',
+                                                      attributes.get("globalid"),
+                                                      attributes.get("job_number"),
+                                                      attributes.get("job_name"),
+                                                      readable_edit_date_et)
+                            print(f"Record added: {result}")
+                        except Exception as e:
+                            print(f"Error adding record to processed_updates: {e}")
 
         else:
             print("No features found in query response.")
 
-        # Update last check time
-        last_check_time = datetime.datetime.utcnow()
+        # Update last check time (set to Eastern Time)
+        last_check_time = datetime.datetime.utcnow() + EASTERN_TIME_OFFSET  # Adjust to Eastern Time
 
     except Exception as e:
         print(f"Error during monitoring: {e}")
+
+    finally:
+        is_processing = False  # Reset the flag to allow future processing
 
 # Continuous monitoring loop (every 60 seconds)
 while True:
