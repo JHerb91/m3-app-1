@@ -1,83 +1,100 @@
-import anvil.server
-import anvil.tables
-from anvil.tables import app_tables
+import datetime
 import time
+import anvil.http
+import json
+import anvil.server
 
-# Function to retrieve the last processed edit date from the database
-def get_last_processed_edit_date_from_database():
+# Hosted feature layer URL
+feature_layer_url = "https://services.arcgis.com/rD2ylXRs80UroD90/arcgis/rest/services/Project_Tracker_View_Layer/FeatureServer/0"
+
+# Webhook URL
+make_webhook_url = "https://hook.us2.make.com/ij23k1z88l9ie4pmnv421ylnpljzaz8b"
+
+# Track last check time
+last_check_time = datetime.datetime.utcnow()
+
+# Function to monitor feature layer
+def monitor_feature_layer():
+    global last_check_time  # Preserve timestamp across runs
+
     try:
-        # Assuming 'processed_updates' is your table
-        record = app_tables.processed_updates.get()  # Get the last record or adjust as needed
-        if record:
-            return record['last_processed_edit_date']
+        print(f"Last check time (UTC): {last_check_time}")
+
+        # Query URL for fetching features
+        query_url = f"{feature_layer_url}/query?where=1=1&outFields=*&f=json"
+
+        print(f"Sending request to {query_url}")
+        response = anvil.http.request(
+            query_url,
+            method="GET"
+        )
+
+        # Decode response
+        raw_data = json.loads(response.get_bytes().decode("utf-8"))
+        print(f"Query successful. Processing features...")
+
+        # Check if features are present
+        if "features" in raw_data and raw_data["features"]:
+            updates_found = False  # Track updates
+
+            for feature in raw_data["features"]:
+                attributes = feature["attributes"]
+
+                # Extract EditDate and compare with last check time
+                edit_date = attributes.get("EditDate", None)
+                if edit_date:
+                    readable_edit_date = datetime.datetime.utcfromtimestamp(edit_date / 1000)
+
+                    # 1-minute buffer for time comparison
+                    tolerance_time = last_check_time - datetime.timedelta(minutes=1)
+
+                    # Process only updated records
+                    if readable_edit_date > tolerance_time:
+                        updates_found = True
+                        print(f"Update detected at {readable_edit_date}!")
+
+                        # Prepare payload for webhook
+                        payload = {
+                            "edit_date": readable_edit_date.strftime('%Y-%m-%d %H:%M:%S'),
+                            "attributes": attributes
+                        }
+
+                        # Log updated record details
+                        print(f"Sending updated record to webhook:\n{json.dumps(payload, indent=2)}")
+
+                        # Send payload to webhook
+                        webhook_response = anvil.http.request(
+                            make_webhook_url,
+                            method="POST",
+                            json=payload
+                        )
+
+                        # Debug webhook response
+                        print(f"Webhook Response Status: {webhook_response.status}")
+                        print(f"Webhook Response Body: {webhook_response.get_bytes().decode('utf-8')}")
+
+                        # Handle webhook errors
+                        if webhook_response.status != 200:
+                            print(f"Webhook error. Status code: {webhook_response.status}")
+
+            # Print only if no updates were detected
+            if not updates_found:
+                print("No updates found.")
+
         else:
-            return None  # No record found
+            print("No features found in query response.")
+
+        # Update last check time
+        last_check_time = datetime.datetime.utcnow()
+
     except Exception as e:
-        print(f"Error retrieving last processed edit date: {e}")
-        return None
+        print(f"Error during monitoring: {e}")
 
-
-# Function to save updates to the table
-def save_updates_to_database(updates):
-    try:
-        for update in updates:
-            # Assuming 'processed_updates' table and relevant fields
-            app_tables.processed_updates.add_row(
-                globalid=update.get('globalid'),
-                last_processed_edit_date=update.get('last_processed_edit_date'),
-                edit_date=update.get('edit_date')
-            )
-        print(f"Saved {len(updates)} updates to the database.")
-    except Exception as e:
-        print(f"Error saving updates to table: {e}")
-
-
-# Function to fetch feature data (use your own logic here to query the external service)
-def fetch_feature_data(last_processed_edit_date):
-    try:
-        # Here, you would implement the logic to fetch data, for example:
-        # query the external service using last_processed_edit_date
-        print("Fetching feature data...")
-
-        # Sample data (replace with actual logic)
-        updates = [
-            {
-                'globalid': '123',
-                'last_processed_edit_date': time.time(),
-                'edit_date': time.time()
-            },
-            {
-                'globalid': '456',
-                'last_processed_edit_date': time.time(),
-                'edit_date': time.time()
-            }
-        ]
-        print(f"Found {len(updates)} updates.")
-        return updates
-    except Exception as e:
-        print(f"Error during feature data fetch: {e}")
-        return []
-
-
-# Function to monitor updates (to be triggered manually)
-def monitor_updates():
-    # Step 1: Get the last processed edit date
-    last_processed_edit_date = get_last_processed_edit_date_from_database()
-    print(f"Last processed edit date: {last_processed_edit_date}")
-
-    # Step 2: Fetch feature data based on the last processed edit date
-    updates = fetch_feature_data(last_processed_edit_date)
-
-    # Step 3: Save the updates to the database
-    if updates:
-        print(f"Saving {len(updates)} updates to table...")
-        save_updates_to_database(updates)
-    else:
-        print("No updates to save.")
-
-
-# Start monitoring updates when a button is clicked
+# Function to trigger the monitoring process and schedule the next check
 @anvil.server.callable
 def start_monitoring():
-    monitor_updates()
-    return "Monitoring completed, updates have been processed!"
+    monitor_feature_layer()
+
+    # Schedule the next check after 60 seconds (non-blocking)
+    anvil.server.call_later(60, start_monitoring)
+    return "Monitoring started and will continue every 60 seconds."
