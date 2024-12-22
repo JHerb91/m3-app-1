@@ -4,14 +4,17 @@ db_schema:
     client: full
     columns:
     - admin_ui: {width: 200}
-      name: globalid
-      type: string
-    - admin_ui: {width: 200}
       name: last_processed_edit_date
       type: datetime
     - admin_ui: {width: 200}
       name: edit_date
       type: datetime
+    - admin_ui: {width: 200}
+      name: precon_timestamp
+      type: number
+    - admin_ui: {width: 200}
+      name: job_number
+      type: string
     server: full
     title: processed_updates
 dependencies: []
