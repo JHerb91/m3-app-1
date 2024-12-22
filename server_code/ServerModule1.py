@@ -17,6 +17,9 @@ make_webhook_url = "https://hook.us2.make.com/m7lwew8alckuusm2dnn3d7tkvqnum2j3"
 # Set up Eastern timezone
 eastern_tz = ZoneInfo("America/New_York")
 
+# Store last processed timestamps to prevent oscillation
+last_processed_timestamps = {}
+
 def sync_to_processed_updates(feature):
     """Sync a feature to the processed_updates table without triggering webhook"""
     try:
@@ -40,6 +43,8 @@ def sync_to_processed_updates(feature):
                     precon_timestamp=precon_timestamp
                 )
                 print(f"Synced new record for job number: {job_number}")
+                # Initialize timestamp history
+                last_processed_timestamps[job_number] = {precon_timestamp}
             
     except Exception as e:
         print(f"Error syncing record: {e}")
@@ -90,19 +95,28 @@ def check_for_updates(feature, existing_record):
         print(f"  Stored precon_timestamp: {stored_precon} ({type(stored_precon)})")
         print(f"  New precon_timestamp: {new_precon} ({type(new_precon)})")
         
+        # Initialize timestamp history if not exists
+        if job_number not in last_processed_timestamps:
+            last_processed_timestamps[job_number] = {stored_precon} if stored_precon is not None else set()
+        
         # Convert both to strings for comparison, but only if they exist
         if new_precon is not None and stored_precon is not None:
-            stored_str = str(int(stored_precon))  # Convert to int first to remove any decimal places
-            new_str = str(int(new_precon))
+            new_int = int(new_precon)
             
-            is_different = stored_str != new_str
-            if is_different:
-                print(f"  ✓ Update detected - timestamps are different")
-                print(f"    Old: {stored_str}")
-                print(f"    New: {new_str}")
+            # Check if this is a genuinely new timestamp
+            is_new = new_int not in last_processed_timestamps[job_number]
+            
+            if is_new:
+                print(f"  ✓ Update detected - new timestamp not previously processed")
+                print(f"    Previously processed timestamps: {sorted(last_processed_timestamps[job_number])}")
+                print(f"    New timestamp: {new_int}")
+                # Add new timestamp to history (limit to last 5)
+                last_processed_timestamps[job_number].add(new_int)
+                if len(last_processed_timestamps[job_number]) > 5:
+                    last_processed_timestamps[job_number] = set(sorted(last_processed_timestamps[job_number])[-5:])
             else:
-                print(f"  × No update - timestamps match")
-            return is_different
+                print(f"  × No update - timestamp already processed")
+            return is_new
         else:
             print(f"  × Skipping - missing timestamp values")
             if new_precon is None:
