@@ -3,15 +3,18 @@ db_schema:
   processed_updates:
     client: full
     columns:
-    - admin_ui: {order: 0, width: 200}
-      name: globalid
-      type: string
     - admin_ui: {order: 1, width: 200}
       name: last_processed_edit_date
       type: datetime
     - admin_ui: {order: 2, width: 200}
       name: edit_date
       type: datetime
+    - admin_ui: {order: 3, width: 200}
+      name: precon_timestamp
+      type: number
+    - admin_ui: {order: 4, width: 200}
+      name: job_number
+      type: string
     server: full
     title: processed_updates
 dependencies: []
