@@ -1,14 +1,17 @@
 import datetime
+import time
 import anvil.http
 import json
-import anvil.server
 
 # Hosted feature layer URL
 feature_layer_url = "https://services.arcgis.com/rD2ylXRs80UroD90/arcgis/rest/services/Project_Tracker_View_Layer/FeatureServer/0"
+
+# Webhook URL
 make_webhook_url = "https://hook.us2.make.com/ij23k1z88l9ie4pmnv421ylnpljzaz8b"
 
 # Track last check time
 last_check_time = datetime.datetime.utcnow()
+
 
 # Function to monitor feature layer
 def monitor_feature_layer():
