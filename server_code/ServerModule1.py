@@ -1,13 +1,10 @@
 import datetime
-import time
 import anvil.http
 import json
 import anvil.server
 
 # Hosted feature layer URL
 feature_layer_url = "https://services.arcgis.com/rD2ylXRs80UroD90/arcgis/rest/services/Project_Tracker_View_Layer/FeatureServer/0"
-
-# Webhook URL
 make_webhook_url = "https://hook.us2.make.com/ij23k1z88l9ie4pmnv421ylnpljzaz8b"
 
 # Track last check time
@@ -16,6 +13,7 @@ last_check_time = datetime.datetime.utcnow()
 # Function to monitor feature layer
 def monitor_feature_layer():
     global last_check_time  # Preserve timestamp across runs
+    print("Monitor feature layer called")
 
     try:
         print(f"Last check time (UTC): {last_check_time}")
@@ -31,7 +29,7 @@ def monitor_feature_layer():
 
         # Decode response
         raw_data = json.loads(response.get_bytes().decode("utf-8"))
-        print(f"Query successful. Processing features...")
+        print("Query successful. Processing features...")
 
         # Check if features are present
         if "features" in raw_data and raw_data["features"]:
@@ -59,7 +57,6 @@ def monitor_feature_layer():
                             "attributes": attributes
                         }
 
-                        # Log updated record details
                         print(f"Sending updated record to webhook:\n{json.dumps(payload, indent=2)}")
 
                         # Send payload to webhook
@@ -69,18 +66,12 @@ def monitor_feature_layer():
                             json=payload
                         )
 
-                        # Debug webhook response
                         print(f"Webhook Response Status: {webhook_response.status}")
-                        print(f"Webhook Response Body: {webhook_response.get_bytes().decode('utf-8')}")
-
-                        # Handle webhook errors
                         if webhook_response.status != 200:
                             print(f"Webhook error. Status code: {webhook_response.status}")
 
-            # Print only if no updates were detected
             if not updates_found:
                 print("No updates found.")
-
         else:
             print("No features found in query response.")
 
@@ -90,11 +81,13 @@ def monitor_feature_layer():
     except Exception as e:
         print(f"Error during monitoring: {e}")
 
-# Function to trigger the monitoring process and schedule the next check
+# Function to start monitoring and schedule the next check
 @anvil.server.callable
 def start_monitoring():
-    monitor_feature_layer()
-
-    # Schedule the next check after 60 seconds (non-blocking)
-    anvil.server.call_later(60, start_monitoring)
-    return "Monitoring started and will continue every 60 seconds."
+    print("Start monitoring called")
+    try:
+        monitor_feature_layer()
+        print("Scheduling next check in 60 seconds")
+        anvil.server.call_later(60, start_monitoring)
+    except Exception as e:
+        print(f"Error in start_monitoring: {e}")
