@@ -194,11 +194,40 @@ def monitor_feature_layer():
         print(f"Full error details: {str(e)}")
 
 @anvil.server.background_task
-def run_single_check():
-    """Run a single check of the feature layer"""
-    print(f"\n=== Running check at {datetime.datetime.now(EASTERN_TZ)} ===")
-    monitor_feature_layer()
-    return True
+def monitor_loop():
+    """Background task to continuously monitor the feature layer"""
+    print("Starting monitoring service...")
+    print(f"Start time: {datetime.datetime.now(EASTERN_TZ)}")
+    
+    # Set a flag in the app tables to track the running state
+    try:
+        app_tables.monitoring_status.delete_all_rows()
+        app_tables.monitoring_status.add_row(
+            is_running=True,
+            started_at=datetime.datetime.now(EASTERN_TZ)
+        )
+        print("Set monitoring status to running")
+    except Exception as e:
+        print(f"Error setting monitoring status: {e}")
+        return
+    
+    # Main monitoring loop
+    loop_count = 0
+    while True:
+        try:
+            loop_count += 1
+            print(f"\n=== Monitor Loop #{loop_count} ===")
+            print(f"Current time: {datetime.datetime.now(EASTERN_TZ)}")
+            
+            monitor_feature_layer()
+            
+            print("\nWaiting 60 seconds before next check...")
+            print(f"Next check at: {datetime.datetime.now(EASTERN_TZ) + datetime.timedelta(seconds=60)}")
+            anvil.server.sleep(60)
+            
+        except Exception as e:
+            print(f"Error in monitor loop: {e}")
+            anvil.server.sleep(5)
 
 @anvil.server.callable
 def start_monitoring():
@@ -212,32 +241,11 @@ def start_monitoring():
             print("Monitoring service is already running")
             return True, "Monitoring service is already running"
         
-        # Clear any old status rows
+        # Clear any old status rows and start fresh
         app_tables.monitoring_status.delete_all_rows()
         
-        # Create new status row before starting task
-        app_tables.monitoring_status.add_row(
-            is_running=True,
-            started_at=datetime.datetime.now(EASTERN_TZ)
-        )
-        
-        # Run the first check immediately
-        run_single_check.call_as_background_task()
-        
-        # Schedule recurring checks
-        @anvil.server.background_task
-        def schedule_checks():
-            while True:
-                try:
-                    anvil.server.sleep(60)
-                    run_single_check.call_as_background_task()
-                except Exception as e:
-                    print(f"Error in scheduler: {e}")
-                    anvil.server.sleep(5)
-        
-        # Start the scheduler
-        print("Starting monitoring scheduler...")
-        schedule_checks.call_as_background_task()
+        print("Starting monitoring service...")
+        anvil.server.launch_background_task('monitor_loop')  # Changed this line - passing string instead of function
         print("Monitoring service started")
         
         return True, "Monitoring service started successfully"
