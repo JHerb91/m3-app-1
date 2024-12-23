@@ -9,31 +9,47 @@ import json
 from urllib.parse import quote
 import anvil.http
 import time
+import sys
 
 # Constants
 FEATURE_LAYER_URL = "https://services.arcgis.com/rD2ylXRs80UroD90/arcgis/rest/services/Project_Tracker_View_Layer/FeatureServer/0"
 MAKE_WEBHOOK_URL = "https://hook.us2.make.com/77sbapae8w8ih3ymbcrc26ft9af1vi0s"
 EASTERN_TZ = ZoneInfo("America/New_York")
 
-def log(message):
-    """Helper function to write to log file"""
-    with open('/tmp/anvil.log', 'a') as f:
-        f.write(f"{message}\n")
-        f.flush()  # Force write to file immediately
+def server_log(message, log_type="INFO"):
+    """Helper function to write to server logs table"""
+    try:
+        # Add to table
+        app_tables.server_logs.add_row(
+            timestamp=datetime.datetime.now(EASTERN_TZ),
+            message=str(message),
+            type=log_type
+        )
+        
+        # Try multiple output methods
+        print(f"[{log_type}] {message}", flush=True)
+        print(f"[{log_type}] {message}", file=sys.stderr, flush=True)
+        
+        # Force Python's stdout to flush
+        sys.stdout.flush()
+        sys.stderr.flush()
+        
+    except Exception as e:
+        print(f"Logging error: {e}", flush=True)
 
 @anvil.server.callable
 def simple_test():
     """Simple test to verify server output"""
-    log("=== Starting Simple Test ===")
-    log("If you see this in the Server Console, printing works!")
-    log("Testing background task...")
+    server_log("=== Starting Simple Test ===")
+    server_log("If you see this in the Server Console, printing works!")
+    server_log("Testing background task...")
     
     @anvil.server.background_task
     def inner_test():
-        log("Background task started")
-        log("Waiting 2 seconds...")
+        server_log("Background task started")
+        server_log("Waiting 2 seconds...")
         time.sleep(2)
-        log("Background task complete")
+        server_log("Background task complete")
         return True
     
     # Launch the background task
@@ -62,11 +78,11 @@ def sync_to_processed_updates(feature):
                     edit_date=readable_edit_date,
                     precon_timestamp=precon_timestamp
                 )
-                log(f"Synced new record for job number: {job_number}")
+                server_log(f"Synced new record for job number: {job_number}")
             
     except Exception as e:
-        log(f"Error syncing record: {e}")
-        log(f"Full error details: {str(e)}")
+        server_log(f"Error syncing record: {e}", "ERROR")
+        server_log(f"Full error details: {str(e)}", "ERROR")
 
 def send_webhook_notification(job_name, readable_edit_date, attributes):
     """Send notification to webhook"""
@@ -94,18 +110,18 @@ def send_webhook_notification(job_name, readable_edit_date, attributes):
                 'Content-Type': 'text/plain'
             }
         )
-        log(f"Successfully sent webhook for job: {job_name}")
-        log(f"Payload sent: {json_str}")
+        server_log(f"Successfully sent webhook for job: {job_name}")
+        server_log(f"Payload sent: {json_str}")
         return True
     except Exception as webhook_error:
-        log(f"Error sending webhook: {webhook_error}")
-        log(f"Attempted payload: {json_str}")
+        server_log(f"Error sending webhook: {webhook_error}", "ERROR")
+        server_log(f"Attempted payload: {json_str}", "ERROR")
         return False
 
 def check_for_updates(feature, existing_record):
     """Check if a feature has been updated compared to our stored record"""
     if not existing_record:
-        log("No existing record found - skipping update check")
+        server_log("No existing record found - skipping update check")
         return False
         
     attributes = feature["attributes"]
@@ -116,13 +132,13 @@ def check_for_updates(feature, existing_record):
     try:
         stored_precon = existing_record['precon_timestamp']
         
-        log(f"\nDetailed comparison for {job_name} (#{job_number}):")
-        log(f"  Stored in Anvil table:")
-        log(f"    precon_timestamp: {stored_precon}")
-        log(f"    As date: {datetime.datetime.fromtimestamp(stored_precon / 1000, EASTERN_TZ)}")
-        log(f"  Coming from ArcGIS:")
-        log(f"    precon_timestamp: {new_precon}")
-        log(f"    As date: {datetime.datetime.fromtimestamp(new_precon / 1000, EASTERN_TZ)}")
+        server_log(f"\nDetailed comparison for {job_name} (#{job_number}):")
+        server_log(f"  Stored in Anvil table:")
+        server_log(f"    precon_timestamp: {stored_precon}")
+        server_log(f"    As date: {datetime.datetime.fromtimestamp(stored_precon / 1000, EASTERN_TZ)}")
+        server_log(f"  Coming from ArcGIS:")
+        server_log(f"    precon_timestamp: {new_precon}")
+        server_log(f"    As date: {datetime.datetime.fromtimestamp(new_precon / 1000, EASTERN_TZ)}")
         
         # Compare with just the stored timestamp
         if new_precon is not None and stored_precon is not None:
@@ -131,28 +147,28 @@ def check_for_updates(feature, existing_record):
             
             # Only trigger update if new timestamp is more recent
             if new_int > stored_int:
-                log(f"  ✓ Update detected - newer timestamp found")
-                log(f"    From: {datetime.datetime.fromtimestamp(stored_int / 1000, EASTERN_TZ)}")
-                log(f"    To: {datetime.datetime.fromtimestamp(new_int / 1000, EASTERN_TZ)}")
-                log(f"    Raw values - Stored: {stored_int}, New: {new_int}")
+                server_log(f"  ✓ Update detected - newer timestamp found")
+                server_log(f"    From: {datetime.datetime.fromtimestamp(stored_int / 1000, EASTERN_TZ)}")
+                server_log(f"    To: {datetime.datetime.fromtimestamp(new_int / 1000, EASTERN_TZ)}")
+                server_log(f"    Raw values - Stored: {stored_int}, New: {new_int}")
                 return True
             else:
-                log(f"  × No update - new timestamp is not more recent")
-                log(f"    Current: {datetime.datetime.fromtimestamp(stored_int / 1000, EASTERN_TZ)}")
-                log(f"    Received: {datetime.datetime.fromtimestamp(new_int / 1000, EASTERN_TZ)}")
+                server_log(f"  × No update - new timestamp is not more recent")
+                server_log(f"    Current: {datetime.datetime.fromtimestamp(stored_int / 1000, EASTERN_TZ)}")
+                server_log(f"    Received: {datetime.datetime.fromtimestamp(new_int / 1000, EASTERN_TZ)}")
                 return False
         else:
-            log(f"  × Skipping - missing timestamp values")
+            server_log(f"  × Skipping - missing timestamp values")
             if new_precon is None:
-                log("    New precon_timestamp is None")
+                server_log("    New precon_timestamp is None")
             if stored_precon is None:
-                log("    Stored precon_timestamp is None")
+                server_log("    Stored precon_timestamp is None")
             return False
             
     except Exception as e:
-        log(f"Error checking for updates: {e}")
-        log(f"  × Skipping due to error")
-        log(f"  Full error details: {str(e)}")
+        server_log(f"Error checking for updates: {e}", "ERROR")
+        server_log(f"  × Skipping due to error", "ERROR")
+        server_log(f"  Full error details: {str(e)}", "ERROR")
         return False
 
 def monitor_feature_layer():
@@ -170,13 +186,13 @@ def monitor_feature_layer():
         if "features" in response and response["features"]:
             updates_found = False
             
-            log(f"\nProcessing {len(response['features'])} features...")
+            server_log(f"\nProcessing {len(response['features'])} features...")
             
             # First, sync any new records without sending webhooks
             for feature in response["features"]:
                 sync_to_processed_updates(feature)
             
-            log("\nChecking for updates...")
+            server_log("\nChecking for updates...")
             # Then check for actual updates
             for feature in response["features"]:
                 attributes = feature["attributes"]
@@ -186,7 +202,7 @@ def monitor_feature_layer():
                 precon_timestamp = attributes.get("precon_timestamp")
                 
                 if not job_number:
-                    log(f"Skipping record with no job number")
+                    server_log(f"Skipping record with no job number")
                     continue
                 
                 # Search for existing record
@@ -199,7 +215,7 @@ def monitor_feature_layer():
                 if existing_record and needs_update:
                     updates_found = True
                     readable_edit_date = datetime.datetime.fromtimestamp(edit_date / 1000, EASTERN_TZ)
-                    log(f"\n→ Sending webhook for job: {job_name} (#{job_number})")
+                    server_log(f"\n→ Sending webhook for job: {job_name} (#{job_number})")
                     
                     if send_webhook_notification(job_name, readable_edit_date, attributes):
                         # Update our record only if webhook was successful
@@ -208,22 +224,22 @@ def monitor_feature_layer():
                             edit_date=readable_edit_date,
                             precon_timestamp=precon_timestamp
                         )
-                        log(f"✓ Successfully updated record for {job_name} (#{job_number})")
+                        server_log(f"✓ Successfully updated record for {job_name} (#{job_number})")
             
             if not updates_found:
-                log("\nNo new updates found.")
+                server_log("\nNo new updates found.")
         else:
-            log("No features found in query response.")
+            server_log("No features found in query response.")
 
     except Exception as e:
-        log(f"Error during monitoring: {e}")
-        log(f"Full error details: {str(e)}")
+        server_log(f"Error during monitoring: {e}", "ERROR")
+        server_log(f"Full error details: {str(e)}", "ERROR")
 
 @anvil.server.background_task
 def monitor_loop():
     """Background task to continuously monitor the feature layer"""
-    log("Starting monitoring service...")
-    log(f"Start time: {datetime.datetime.now(EASTERN_TZ)}")
+    server_log("Starting monitoring service...")
+    server_log(f"Start time: {datetime.datetime.now(EASTERN_TZ)}")
     
     # Set a flag in the app tables to track the running state
     try:
@@ -232,9 +248,9 @@ def monitor_loop():
             is_running=True,
             started_at=datetime.datetime.now(EASTERN_TZ)
         )
-        log("Set monitoring status to running")
+        server_log("Set monitoring status to running")
     except Exception as e:
-        log(f"Error setting monitoring status: {e}")
+        server_log(f"Error setting monitoring status: {e}", "ERROR")
         return
     
     # Main monitoring loop
@@ -242,17 +258,17 @@ def monitor_loop():
     while True:
         try:
             loop_count += 1
-            log(f"\n=== Monitor Loop #{loop_count} ===")
-            log(f"Current time: {datetime.datetime.now(EASTERN_TZ)}")
+            server_log(f"\n=== Monitor Loop #{loop_count} ===")
+            server_log(f"Current time: {datetime.datetime.now(EASTERN_TZ)}")
             
             monitor_feature_layer()
             
-            log("\nWaiting 60 seconds before next check...")
-            log(f"Next check at: {datetime.datetime.now(EASTERN_TZ) + datetime.timedelta(seconds=60)}")
+            server_log("\nWaiting 60 seconds before next check...")
+            server_log(f"Next check at: {datetime.datetime.now(EASTERN_TZ) + datetime.timedelta(seconds=60)}")
             time.sleep(60)
             
         except Exception as e:
-            log(f"Error in monitor loop: {e}")
+            server_log(f"Error in monitor loop: {e}", "ERROR")
             time.sleep(5)
 
 @anvil.server.callable
@@ -264,20 +280,20 @@ def start_monitoring():
         
         # If there's an existing status row and it shows running
         if status_rows and status_rows[0]['is_running']:
-            log("Monitoring service is already running")
+            server_log("Monitoring service is already running")
             return True, "Monitoring service is already running"
         
         # Clear any old status rows and start fresh
         app_tables.monitoring_status.delete_all_rows()
         
-        log("Starting monitoring service...")
+        server_log("Starting monitoring service...")
         anvil.server.launch_background_task('monitor_loop')
-        log("Monitoring service started")
+        server_log("Monitoring service started")
         
         return True, "Monitoring service started successfully"
     except Exception as e:
-        log(f"Error starting monitoring service: {e}")
-        log(f"Full error details: {str(e)}")
+        server_log(f"Error starting monitoring service: {e}", "ERROR")
+        server_log(f"Full error details: {str(e)}", "ERROR")
         return False, f"Error starting monitoring service: {e}"
 
 @anvil.server.callable
@@ -287,11 +303,11 @@ def get_monitoring_status():
         # Check the status table
         status_rows = list(app_tables.monitoring_status.search())
         if status_rows and status_rows[0]['is_running']:
-            log("Monitoring service is running")
+            server_log("Monitoring service is running")
             return True
         else:
-            log("No monitoring service found")
+            server_log("No monitoring service found")
             return False
     except Exception as e:
-        log(f"Error checking monitoring status: {e}")
+        server_log(f"Error checking monitoring status: {e}", "ERROR")
         return False
