@@ -19,8 +19,6 @@ EASTERN_TZ = ZoneInfo("America/New_York")
 # Add this near the top with your other constants
 _IS_STARTING = False
 
-# Constants remain the same...
-
 @anvil.server.callable
 def startup():
     """Function that runs when the app starts"""
@@ -55,8 +53,6 @@ def server_log(message, log_type="INFO"):
         
     except Exception as e:
         print(f"Logging error: {e}", flush=True)
-
-# ... rest of the file remains the same ...
 
 @anvil.server.callable
 def simple_test():
@@ -194,6 +190,7 @@ def check_for_updates(feature, existing_record):
 
 def monitor_feature_layer():
     try:
+        server_log("Starting feature layer monitoring...")  # Log start of monitoring
         # Query all records
         where_clause = quote("1=1")
         query_url = f"{FEATURE_LAYER_URL}/query?where={where_clause}&outFields=*&f=json"
@@ -285,7 +282,7 @@ def monitor_loop():
     while True:
         try:
             loop_count += 1
-            server_log(f"\n=== Monitor Loop #{loop_count} ===")
+            server_log(f"\n=== Monitor Loop #{loop_count} ===")  # Log loop count
             server_log(f"Current time: {datetime.datetime.now(EASTERN_TZ)}")
             
             monitor_feature_layer()
@@ -315,7 +312,7 @@ def start_monitoring():
         
         server_log("Starting monitoring service...")
         anvil.server.launch_background_task('monitor_loop')
-        server_log("Monitoring service started")
+        server_log("Monitoring service started")  # Log that the task was started
         
         return True, "Monitoring service started successfully"
     except Exception as e:
