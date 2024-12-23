@@ -194,37 +194,70 @@ def monitor_feature_layer():
         print(f"Full error details: {str(e)}")
 
 @anvil.server.background_task
-def run_monitor():
-    """Background task to continuously monitor the feature layer"""
-    print("Starting monitoring service...")
-    while True:
-        try:
-            monitor_feature_layer()
-            print("\nWaiting 60 seconds before next check...")
-            anvil.server.sleep(60)  # Use anvil.server.sleep instead of time.sleep
-        except anvil.server.TimeoutError:
-            print("\nServer connection timed out. Reconnecting...")
-            anvil.server.sleep(5)
-        except Exception as e:
-            print(f"Unexpected error: {e}")
-            anvil.server.sleep(5)
+def run_single_check():
+    """Run a single check of the feature layer"""
+    print(f"\n=== Running check at {datetime.datetime.now(EASTERN_TZ)} ===")
+    monitor_feature_layer()
+    return True
 
 @anvil.server.callable
 def start_monitoring():
     """Start the monitoring background task"""
     try:
-        run_monitor.call_as_background_task()
+        # Check if already running by looking at the status table
+        status_rows = list(app_tables.monitoring_status.search())
+        
+        # If there's an existing status row and it shows running
+        if status_rows and status_rows[0]['is_running']:
+            print("Monitoring service is already running")
+            return True, "Monitoring service is already running"
+        
+        # Clear any old status rows
+        app_tables.monitoring_status.delete_all_rows()
+        
+        # Create new status row before starting task
+        app_tables.monitoring_status.add_row(
+            is_running=True,
+            started_at=datetime.datetime.now(EASTERN_TZ)
+        )
+        
+        # Run the first check immediately
+        run_single_check.call_as_background_task()
+        
+        # Schedule recurring checks
+        @anvil.server.background_task
+        def schedule_checks():
+            while True:
+                try:
+                    anvil.server.sleep(60)
+                    run_single_check.call_as_background_task()
+                except Exception as e:
+                    print(f"Error in scheduler: {e}")
+                    anvil.server.sleep(5)
+        
+        # Start the scheduler
+        print("Starting monitoring scheduler...")
+        schedule_checks.call_as_background_task()
+        print("Monitoring service started")
+        
         return True, "Monitoring service started successfully"
     except Exception as e:
+        print(f"Error starting monitoring service: {e}")
+        print(f"Full error details: {str(e)}")
         return False, f"Error starting monitoring service: {e}"
 
 @anvil.server.callable
 def get_monitoring_status():
     """Check if the monitoring service is running"""
     try:
-        tasks = anvil.server.list_background_tasks()
-        is_running = any(task.function_name == 'run_monitor' for task in tasks)
-        return is_running
+        # Check the status table
+        status_rows = list(app_tables.monitoring_status.search())
+        if status_rows and status_rows[0]['is_running']:
+            print("Monitoring service is running")
+            return True
+        else:
+            print("No monitoring service found")
+            return False
     except Exception as e:
         print(f"Error checking monitoring status: {e}")
         return False

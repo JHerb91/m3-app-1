@@ -1,5 +1,16 @@
 allow_embedding: false
 db_schema:
+  monitoring_status:
+    client: none
+    columns:
+    - admin_ui: {order: 0, width: 200}
+      name: is_running
+      type: bool
+    - admin_ui: {order: 1, width: 200}
+      name: started_at
+      type: datetime
+    server: full
+    title: monitoring_status
   processed_updates:
     client: full
     columns:
