@@ -35,7 +35,7 @@ def server_log(message, log_type="INFO"):
     """Helper function to write to server logs table"""
     try:
         # Clean up old logs if we have too many rows
-        if app_tables.server_logs.search().count() > 1000:  # Adjust this number as needed
+        if len(app_tables.server_logs.search()) > 1000:  # Adjust this number as needed
             cleanup_old_logs()
         
         # Add to table
