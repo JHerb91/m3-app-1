@@ -16,14 +16,22 @@ FEATURE_LAYER_URL = "https://services.arcgis.com/rD2ylXRs80UroD90/arcgis/rest/se
 MAKE_WEBHOOK_URL = "https://hook.us2.make.com/77sbapae8w8ih3ymbcrc26ft9af1vi0s"
 EASTERN_TZ = ZoneInfo("America/New_York")
 
+# Add this near the top with your other constants
+_IS_STARTING = False
+
 @anvil.server.callable
 def startup():
     """Function that runs when the app starts"""
+    global _IS_STARTING
+    
     try:
-        # Clean up any old logs first
-        cleanup_old_logs()
+        # Prevent multiple startups
+        if _IS_STARTING:
+            return
+            
+        _IS_STARTING = True
         
-        # Check if monitoring is already running
+        # Check if monitoring is already running first
         if not get_monitoring_status():
             server_log("Starting monitoring service during app startup...")
             success, message = start_monitoring()
@@ -33,8 +41,14 @@ def startup():
                 server_log(f"Failed to start monitoring: {message}", "ERROR")
         else:
             server_log("Monitoring service was already running")
+            
+        # Clean up old logs in the background
+        anvil.server.launch_background_task('cleanup_old_logs')
+            
     except Exception as e:
         server_log(f"Error during startup: {e}", "ERROR")
+    finally:
+        _IS_STARTING = False
 
 @anvil.server.callable
 def cleanup_old_logs(keep_hours=24):
