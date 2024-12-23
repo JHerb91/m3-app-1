@@ -16,9 +16,31 @@ FEATURE_LAYER_URL = "https://services.arcgis.com/rD2ylXRs80UroD90/arcgis/rest/se
 MAKE_WEBHOOK_URL = "https://hook.us2.make.com/77sbapae8w8ih3ymbcrc26ft9af1vi0s"
 EASTERN_TZ = ZoneInfo("America/New_York")
 
+@anvil.server.callable
+def cleanup_old_logs(keep_hours=24):
+    """Clean up old logs, keeping only the most recent hours specified"""
+    try:
+        # Calculate the cutoff time
+        cutoff_time = datetime.datetime.now(EASTERN_TZ) - datetime.timedelta(hours=keep_hours)
+        
+        # Get all logs older than the cutoff
+        old_logs = app_tables.server_logs.search(timestamp=q.less_than(cutoff_time))
+        
+        # Delete old logs
+        for log in old_logs:
+            log.delete()
+            
+        print(f"Cleaned up logs older than {keep_hours} hours")
+    except Exception as e:
+        print(f"Error cleaning up logs: {e}")
+
 def server_log(message, log_type="INFO"):
     """Helper function to write to server logs table"""
     try:
+        # Clean up old logs if we have too many rows
+        if app_tables.server_logs.search(tables=True).count() > 1000:  # Adjust this number as needed
+            cleanup_old_logs()
+        
         # Add to table
         app_tables.server_logs.add_row(
             timestamp=datetime.datetime.now(EASTERN_TZ),
