@@ -17,6 +17,26 @@ MAKE_WEBHOOK_URL = "https://hook.us2.make.com/77sbapae8w8ih3ymbcrc26ft9af1vi0s"
 EASTERN_TZ = ZoneInfo("America/New_York")
 
 @anvil.server.callable
+def startup():
+    """Function that runs when the app starts"""
+    try:
+        # Clean up any old logs first
+        cleanup_old_logs()
+        
+        # Check if monitoring is already running
+        if not get_monitoring_status():
+            server_log("Starting monitoring service during app startup...")
+            success, message = start_monitoring()
+            if success:
+                server_log("Monitoring service started automatically")
+            else:
+                server_log(f"Failed to start monitoring: {message}", "ERROR")
+        else:
+            server_log("Monitoring service was already running")
+    except Exception as e:
+        server_log(f"Error during startup: {e}", "ERROR")
+
+@anvil.server.callable
 def cleanup_old_logs(keep_hours=24):
     """Clean up old logs, keeping only the most recent hours specified"""
     try:
