@@ -203,6 +203,9 @@ def monitor_feature_layer():
             method="GET",
             json=True
         )
+        
+        # Log the response for debugging
+        server_log(f"Response from ArcGIS: {response}")
 
         if "features" in response and response["features"]:
             updates_found = False
@@ -231,6 +234,9 @@ def monitor_feature_layer():
                 existing_record = existing_records[0] if existing_records else None
                 
                 needs_update = check_for_updates(feature, existing_record)
+                
+                # Log before sending webhook
+                server_log(f"Preparing to send webhook for job: {job_name} (#{job_number})")
                 
                 # Only proceed if we have an existing record and there's an actual update
                 if existing_record and needs_update:
